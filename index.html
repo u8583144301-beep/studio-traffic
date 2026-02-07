@@ -50,14 +50,14 @@
             <button onclick="changePeriod(-1)">«</button>
             <button onclick="changePeriod(0)">DZISIAJ</button>
             <button onclick="changePeriod(1)">»</button>
-            <span id="date-label" class="date-main">Ładowanie...</span>
-            <div id="status" class="status-bar">Łączenie...</div>
+            <span id="date-label" class="date-main">CZEKAM...</span>
+            <div id="status" class="status-bar">Status: OK</div>
         </div>
         <table id="main-table"><thead id="table-head"></thead><tbody id="table-body"></tbody></table>
     </div>
 
 <script>
-/** 1. KONFIGURACJA **/
+/** 1. CONFIG **/
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzpgYNw2eHPLJYrpoQlax8c4fw_k14Ber2ciYMcbZjwMok3uJbQJTmSgPeptH3Ya5pv/exec";
 const HASH_TARGET = "7a4034870f20d57591e1f81d1e44f8496152a658231268685e8d893077e69f3e";
 const isReadOnly = window.location.search.includes("view=true");
@@ -84,50 +84,47 @@ const tags = {
     '!!': { label: 'PILNE', cls: 't-urgent', hex: '#e74c3c' }
 };
 
-/** 2. BEZPIECZEŃSTWO **/
-async function generujHash(text) {
-    const msgBuffer = new TextEncoder().encode(text);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+/** 2. AUTH **/
+async function hash(text) {
+    const msg = new TextEncoder().encode(text.trim().toLowerCase());
+    const buf = await crypto.subtle.digest('SHA-256', msg);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function inicjalizujAplikacje() {
-    if (isReadOnly) { startSystem(); return; }
-    if (sessionStorage.getItem("zalogowany") === "true") { startSystem(); return; }
-
-    const wpisane = prompt("Podaj hasło dostępu:");
-    if (wpisane === null) {
-        document.body.innerHTML = "<h2 style='color:white;text-align:center;margin-top:50px;'>Dostęp wymaga hasła.</h2>";
+async function checkAccess() {
+    if (isReadOnly || sessionStorage.getItem("logged") === "true") {
+        run();
         return;
     }
-
-    const hash = await generujHash(wpisane.trim());
-    if (hash === HASH_HASLA) {
-        sessionStorage.setItem("zalogowany", "true");
-        startSystem();
+    const pass = prompt("Podaj hasło:");
+    if (!pass) return;
+    const h = await hash(pass);
+    if (h === HASH_TARGET) {
+        sessionStorage.setItem("logged", "true");
+        run();
     } else {
         alert("Błędne hasło!");
         location.reload();
     }
 }
 
-function startSystem() {
+/** 3. CORE **/
+function run() {
     initLegend();
-    fetchCloud();
-    setInterval(fetchCloud, 60000);
+    fetchData();
+    setInterval(fetchData, 60000);
 }
 
-/** 3. DANE I RENDER **/
-async function fetchCloud() {
-    const statusEl = document.getElementById('status');
-    statusEl.innerText = "Pobieranie...";
+async function fetchData() {
+    const st = document.getElementById('status');
+    if(st) st.innerText = "Synchronizacja...";
     try {
-        const response = await fetch(SCRIPT_URL);
-        cloudData = await response.json();
-        statusEl.innerText = "Zsynchronizowano: " + new Date().toLocaleTimeString();
+        const r = await fetch(SCRIPT_URL);
+        cloudData = await r.json();
+        if(st) st.innerText = "Aktualny: " + new Date().toLocaleTimeString();
         render();
     } catch (e) {
-        statusEl.innerText = "Błąd bazy danych!";
+        if(st) st.innerText = "Błąd bazy!";
     }
 }
 
@@ -135,100 +132,79 @@ function saveData(dKey, sId, val) {
     if (isReadOnly) return;
     const id = `traffic-${dKey}-${sId}`;
     cloudData[id] = val;
-    document.getElementById('status').innerText = "Zapisywanie...";
-    fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({id: id, val: val}) })
-        .then(() => { document.getElementById('status').innerText = "Zapisano pomyślnie"; })
-        .catch(() => { document.getElementById('status').innerText = "Błąd zapisu!"; });
+    fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({id, val}) });
 }
 
+/** 4. RENDER **/
 function render() {
     const tbody = document.getElementById('table-body');
     const head = document.getElementById('table-head');
+    if(!tbody || !head) return;
     tbody.innerHTML = '';
     const dKey = referenceDate.toISOString().split('T')[0];
-    if (currentView === 'day') renderDay(tbody, head, dKey);
-    else renderWeek(tbody, head);
-}
-
-function renderDay(tbody, head, dKey) {
-    document.getElementById('date-label').innerText = referenceDate.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
-    head.innerHTML = `<tr><th class="res-name">ZESPÓŁ</th>${[1,2,3,4,5,6,7].map(h => `<th>${h}H</th>`).join('')}</tr>`;
     
-    let totalWorkHours = 0;
-    allResources.forEach(res => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td class="res-name">${res}</td>`;
-        for (let i = 1; i <= 7; i++) {
-            const sId = `${res}-${i}`;
-            const val = cloudData[`traffic-${dKey}-${sId}`] || "";
-            let bg = 'transparent';
-            Object.keys(tags).forEach(k => { if (val.includes(`[${tags[k].label}]`)) bg = tags[k].hex; });
-            if (val.trim() !== "" && !val.includes("[URLOP]") && !val.includes("[L4]")) totalWorkHours++;
-
-            const td = document.createElement('td');
-            td.className = 'slot-box';
-            td.style.backgroundColor = bg;
-            const input = document.createElement('textarea');
-            input.className = 'slot-input';
-            input.value = val;
-            if (isReadOnly) input.readOnly = true;
-
-            input.onfocus = () => {
-                if (!isReadOnly && activeTag) {
-                    const newLabel = `[${tags[activeTag].label}]`;
-                    input.value = newLabel + " " + input.value.replace(/\[.*?\]/g, '').trim();
-                    td.style.backgroundColor = tags[activeTag].hex;
-                    saveData(dKey, sId, input.value);
-                    setTimeout(render, 100);
-                }
-            };
-            input.onblur = () => { if (!isReadOnly) { saveData(dKey, sId, input.value); setTimeout(render, 300); } };
-            td.innerHTML = `<span class="slot-idx">${i}H</span>`;
-            td.appendChild(input);
-            tr.appendChild(td);
-        }
-        tbody.appendChild(tr);
-    });
-    const footerTr = document.createElement('tr');
-    footerTr.innerHTML = `<td class="res-name" style="color:var(--accent);background:#1a1a1a;">MOC DNIA:</td><td colspan="7" style="padding:10px;font-size:14px;font-weight:bold;background:#1a1a1a;">🚀 Zaplanowano: <span style="color:var(--obrobka);">${totalWorkHours}H</span></td>`;
-    tbody.appendChild(footerTr);
-}
-
-function renderWeek(tbody, head) {
-    const start = new Date(referenceDate);
-    const dayOffset = start.getDay();
-    start.setDate(start.getDate() - dayOffset + (dayOffset === 0 ? -6 : 1));
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-        const d = new Date(start); 
-        d.setDate(start.getDate() + i);
-        days.push({ key: d.toISOString().split('T')[0], label: d.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric' }) });
-    }
-    document.getElementById('date-label').innerText = `TYDZIEŃ: ${days[0].label.toUpperCase()} - ${days[6].label.toUpperCase()}`;
-    head.innerHTML = `<tr><th class="res-name">ZESPÓŁ</th>${days.map(d => `<th>${d.label.toUpperCase()}</th>`).join('')}</tr>`;
-    
-    allResources.forEach(res => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td class="res-name">${res}</td>`;
-        days.forEach(d => {
-            const td = document.createElement('td'); 
-            td.style.padding = '5px'; td.style.verticalAlign = 'top';
-            td.onclick = () => { referenceDate = new Date(d.key); setView('day'); };
-            for(let h=1; h<=7; h++) {
-                const v = cloudData[`traffic-${d.key}-${res}-${h}`] || "";
-                if(v) {
-                    const pill = document.createElement('div');
-                    let c = "";
-                    Object.keys(tags).forEach(k => { if(v.includes(`[${tags[k].label}]`)) c = tags[k].cls; });
-                    pill.className = `task-pill ${c}`;
-                    pill.textContent = v;
-                    td.appendChild(pill);
-                }
+    if (currentView === 'day') {
+        document.getElementById('date-label').innerText = referenceDate.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
+        head.innerHTML = `<tr><th class="res-name">ZESPÓŁ</th>${[1,2,3,4,5,6,7].map(h => `<th>${h}H</th>`).join('')}</tr>`;
+        let p = 0;
+        allResources.forEach(res => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td class="res-name">${res}</td>`;
+            for (let i = 1; i <= 7; i++) {
+                const sId = `${res}-${i}`;
+                const val = cloudData[`traffic-${dKey}-${sId}`] || "";
+                let bg = 'transparent';
+                Object.keys(tags).forEach(k => { if (val.includes(`[${tags[k].label}]`)) bg = tags[k].hex; });
+                if (val.trim() && !val.includes("[URLOP]") && !val.includes("[L4]")) p++;
+                const td = document.createElement('td');
+                td.className = 'slot-box'; td.style.backgroundColor = bg;
+                const input = document.createElement('textarea');
+                input.className = 'slot-input'; input.value = val;
+                if (isReadOnly) input.readOnly = true;
+                input.onfocus = () => {
+                    if (!isReadOnly && activeTag) {
+                        input.value = `[${tags[activeTag].label}] ` + input.value.replace(/\[.*?\]/g, '').trim();
+                        saveData(dKey, sId, input.value);
+                        setTimeout(render, 100);
+                    }
+                };
+                input.onblur = () => { if (!isReadOnly) saveData(dKey, sId, input.value); };
+                td.innerHTML = `<span class="slot-idx">${i}H</span>`;
+                td.appendChild(input); tr.appendChild(td);
             }
-            tr.appendChild(td);
+            tbody.appendChild(tr);
         });
-        tbody.appendChild(tr);
-    });
+    } else {
+        const start = new Date(referenceDate);
+        start.setDate(start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1));
+        const days = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(start); d.setDate(start.getDate() + i);
+            days.push({ key: d.toISOString().split('T')[0], lab: d.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric' }) });
+        }
+        document.getElementById('date-label').innerText = `TYDZIEŃ: ${days[0].lab} - ${days[6].lab}`.toUpperCase();
+        head.innerHTML = `<tr><th class="res-name">ZESPÓŁ</th>${days.map(d => `<th>${d.lab}</th>`).join('')}</tr>`;
+        allResources.forEach(res => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td class="res-name">${res}</td>`;
+            days.forEach(d => {
+                const td = document.createElement('td'); 
+                td.style.padding = '5px'; td.onclick = () => { referenceDate = new Date(d.key); setView('day'); };
+                for(let h=1; h<=7; h++) {
+                    const v = cloudData[`traffic-${d.key}-${res}-${h}`] || "";
+                    if(v) {
+                        const pill = document.createElement('div');
+                        let c = "";
+                        Object.keys(tags).forEach(k => { if(v.includes(`[${tags[k].label}]`)) c = tags[k].cls; });
+                        pill.className = `task-pill ${c}`; pill.textContent = v;
+                        td.appendChild(pill);
+                    }
+                }
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+    }
 }
 
 function setView(v) { 
@@ -236,21 +212,19 @@ function setView(v) {
     document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.id === `btn-${v}`));
     render(); 
 }
-
 function changePeriod(o) {
     if (o === 0) referenceDate = new Date();
     else referenceDate.setDate(referenceDate.getDate() + (currentView === 'day' ? o : o * 7));
-    fetchCloud(); 
+    fetchData();
 }
-
 function initLegend() {
     const leg = document.getElementById('legend');
+    if (!leg) return;
     if (isReadOnly) { leg.style.display = 'none'; return; }
     leg.innerHTML = '';
     Object.keys(tags).forEach(k => {
         const div = document.createElement('div');
-        div.className = `tag-item ${tags[k].cls}`;
-        div.innerText = tags[k].label;
+        div.className = `tag-item ${tags[k].cls}`; div.innerText = tags[k].label;
         div.onclick = () => {
             document.querySelectorAll('.tag-item').forEach(el => el.classList.remove('active'));
             if (activeTag === k) activeTag = null;
@@ -260,8 +234,7 @@ function initLegend() {
     });
 }
 
-// START
-inicjalizujAplikacje();
+checkAccess();
 </script>
 </body>
 </html>
