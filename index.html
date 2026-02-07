@@ -16,7 +16,6 @@
         .tag-legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; background: #1a1a1a; padding: 12px; border-radius: 8px; border: 1px solid #333; }
         .tag-item { padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
         .tag-item.active { border-color: white; transform: scale(1.05); }
-        
         .t-o { background: var(--obrobka) !important; } .t-d { background: var(--druk) !important; }
         .t-pir { background: var(--pir) !important; color: black; } .t-u { background: var(--urlop) !important; }
         .t-det { background: var(--detektyw) !important; } .t-b { background: var(--branding) !important; }
@@ -24,7 +23,6 @@
         .t-ai { background: var(--ai) !important; } .t-l4 { background: var(--l4) !important; }
         .t-s { background: var(--spotkanie) !important; } .t-w { background: var(--foto) !important; }
         .t-urgent { background: var(--danger) !important; }
-
         .toolbar { display: flex; gap: 15px; background: var(--card); padding: 15px; border-radius: 8px; margin-bottom: 10px; align-items: center; border-bottom: 3px solid var(--accent); flex-wrap: wrap; }
         .date-main { font-size: 18px; font-weight: bold; color: var(--accent); min-width: 250px; text-align: center; }
         table { width: 100%; border-collapse: collapse; background: var(--card); table-layout: fixed; }
@@ -59,61 +57,9 @@
     </div>
 
 <script>
-/** 1. KONFIGURACJA I HASHING **/
-const HASH_HASLA = "7a4034870f20d57591e1f81d1e44f8496152a658231268685e8d893077e69f3e"; // hash dla: zespol_trafik
-const isReadOnly = window.location.search.includes("view=true");
-
-async function generujHash(text) {
-    const msgBuffer = new TextEncoder().encode(text);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** 2. LOGIKA DOSTĘPU (NAPRAWIONA) **/
-async function inicjalizujAplikacje() {
-    // Jeśli tryb tylko do odczytu - startujemy od razu
-    if (isReadOnly) {
-        startSystem();
-        return;
-    }
-
-    const sesja = sessionStorage.getItem("zalogowany");
-    if (sesja === "true") {
-        startSystem();
-        return;
-    }
-
-    const wpisane = prompt("Podaj hasło dostępu:");
-    
-    if (wpisane === null) {
-        document.body.innerHTML = "<h2 style='color:white;text-align:center;margin-top:50px;'>Wymagane hasło.</h2>";
-        return;
-    }
-
-    const wpisaneHash = await generujHash(wpisane);
-
-    if (wpisaneHash === HASH_HASLA) {
-        sessionStorage.setItem("zalogowany", "true");
-        startSystem(); // Uruchomienie po poprawnym haśle
-    } else {
-        alert("Błędne hasło! Spróbuj ponownie.");
-        location.reload(); // Odśwież, by zapytać jeszcze raz
-    }
-}
-
-// Funkcja zbierająca start wszystkich procesów
-function startSystem() {
-    initLegend();
-    fetchCloud();
-    setInterval(fetchCloud, 60000);
-}
-
-// GŁÓWNY START
-inicjalizujAplikacje();
-
-/** 3. RESZTA KONFIGURACJI **/
+/** 1. KONFIGURACJA **/
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzpgYNw2eHPLJYrpoQlax8c4fw_k14Ber2ciYMcbZjwMok3uJbQJTmSgPeptH3Ya5pv/exec";
-const HASLO = "zespol_trafik";
+const HASH_HASLA = "7a4034870f20d57591e1f81d1e44f8496152a658231268685e8d893077e69f3e";
 const isReadOnly = window.location.search.includes("view=true");
 
 let currentView = 'day'; 
@@ -138,47 +84,40 @@ const tags = {
     '!!': { label: 'PILNE', cls: 't-urgent', hex: '#e74c3c' }
 };
 
-/** 2. BEZPIECZNY DOSTĘP (HASHING) **/
-const HASH_HASLA = "7a4034870f20d57591e1f81d1e44f8496152a658231268685e8d893077e69f3e";
-
-// Funkcja zamieniająca tekst na bezpieczny hash
+/** 2. BEZPIECZEŃSTWO **/
 async function generujHash(text) {
     const msgBuffer = new TextEncoder().encode(text);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function sprawdzDostep() {
-    if (isReadOnly) return; // Widzowie nie potrzebują hasła
-    
-    const sesja = sessionStorage.getItem("zalogowany");
-    if (sesja === "true") return;
+async function inicjalizujAplikacje() {
+    if (isReadOnly) { startSystem(); return; }
+    if (sessionStorage.getItem("zalogowany") === "true") { startSystem(); return; }
 
     const wpisane = prompt("Podaj hasło dostępu:");
-    
     if (wpisane === null) {
-        document.body.innerHTML = "<h2 style='color:white;text-align:center;margin-top:50px;'>Dostęp zablokowany.</h2>";
-        throw "Cancelled";
+        document.body.innerHTML = "<h2 style='color:white;text-align:center;margin-top:50px;'>Dostęp wymaga hasła.</h2>";
+        return;
     }
 
-    // Zamieniamy wpisany tekst na hash i porównujemy z zapisanym
-    const wpisaneHash = await generujHash(wpisane);
-
-    if (wpisaneHash === HASH_HASLA) {
+    const hash = await generujHash(wpisane.trim());
+    if (hash === HASH_HASLA) {
         sessionStorage.setItem("zalogowany", "true");
-        location.reload(); // Odświeżamy, aby ruszył render danych
+        startSystem();
     } else {
         alert("Błędne hasło!");
-        document.body.innerHTML = "<h2 style='color:white;text-align:center;margin-top:50px;'>Brak autoryzacji.</h2>";
-        throw "Auth failed";
+        location.reload();
     }
 }
 
-// Wywołanie musi być asynchroniczne
-sprawdzDostep();
+function startSystem() {
+    initLegend();
+    fetchCloud();
+    setInterval(fetchCloud, 60000);
+}
 
-/** 3. LOGIKA BIZNESOWA **/
+/** 3. DANE I RENDER **/
 async function fetchCloud() {
     const statusEl = document.getElementById('status');
     statusEl.innerText = "Pobieranie...";
@@ -186,10 +125,10 @@ async function fetchCloud() {
         const response = await fetch(SCRIPT_URL);
         cloudData = await response.json();
         statusEl.innerText = "Zsynchronizowano: " + new Date().toLocaleTimeString();
+        render();
     } catch (e) {
         statusEl.innerText = "Błąd bazy danych!";
     }
-    render();
 }
 
 function saveData(dKey, sId, val) {
@@ -197,15 +136,18 @@ function saveData(dKey, sId, val) {
     const id = `traffic-${dKey}-${sId}`;
     cloudData[id] = val;
     document.getElementById('status').innerText = "Zapisywanie...";
-    
-    fetch(SCRIPT_URL, { 
-        method: 'POST', 
-        body: JSON.stringify({id: id, val: val}) 
-    }).then(() => {
-        document.getElementById('status').innerText = "Zapisano pomyślnie";
-    }).catch(() => {
-        document.getElementById('status').innerText = "Błąd połączenia przy zapisie!";
-    });
+    fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({id: id, val: val}) })
+        .then(() => { document.getElementById('status').innerText = "Zapisano pomyślnie"; })
+        .catch(() => { document.getElementById('status').innerText = "Błąd zapisu!"; });
+}
+
+function render() {
+    const tbody = document.getElementById('table-body');
+    const head = document.getElementById('table-head');
+    tbody.innerHTML = '';
+    const dKey = referenceDate.toISOString().split('T')[0];
+    if (currentView === 'day') renderDay(tbody, head, dKey);
+    else renderWeek(tbody, head);
 }
 
 function renderDay(tbody, head, dKey) {
@@ -226,7 +168,6 @@ function renderDay(tbody, head, dKey) {
             const td = document.createElement('td');
             td.className = 'slot-box';
             td.style.backgroundColor = bg;
-            
             const input = document.createElement('textarea');
             input.className = 'slot-input';
             input.value = val;
@@ -235,28 +176,19 @@ function renderDay(tbody, head, dKey) {
             input.onfocus = () => {
                 if (!isReadOnly && activeTag) {
                     const newLabel = `[${tags[activeTag].label}]`;
-                    let currentText = input.value.replace(/\[.*?\]/g, '').trim();
-                    input.value = newLabel + " " + currentText;
+                    input.value = newLabel + " " + input.value.replace(/\[.*?\]/g, '').trim();
                     td.style.backgroundColor = tags[activeTag].hex;
                     saveData(dKey, sId, input.value);
                     setTimeout(render, 100);
                 }
             };
-
-            input.onblur = () => {
-                if (!isReadOnly) {
-                    saveData(dKey, sId, input.value);
-                    setTimeout(render, 300);
-                }
-            };
-
+            input.onblur = () => { if (!isReadOnly) { saveData(dKey, sId, input.value); setTimeout(render, 300); } };
             td.innerHTML = `<span class="slot-idx">${i}H</span>`;
             td.appendChild(input);
             tr.appendChild(td);
         }
         tbody.appendChild(tr);
     });
-
     const footerTr = document.createElement('tr');
     footerTr.innerHTML = `<td class="res-name" style="color:var(--accent);background:#1a1a1a;">MOC DNIA:</td><td colspan="7" style="padding:10px;font-size:14px;font-weight:bold;background:#1a1a1a;">🚀 Zaplanowano: <span style="color:var(--obrobka);">${totalWorkHours}H</span></td>`;
     tbody.appendChild(footerTr);
@@ -266,14 +198,12 @@ function renderWeek(tbody, head) {
     const start = new Date(referenceDate);
     const dayOffset = start.getDay();
     start.setDate(start.getDate() - dayOffset + (dayOffset === 0 ? -6 : 1));
-    
     const days = [];
     for (let i = 0; i < 7; i++) {
         const d = new Date(start); 
         d.setDate(start.getDate() + i);
         days.push({ key: d.toISOString().split('T')[0], label: d.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric' }) });
     }
-
     document.getElementById('date-label').innerText = `TYDZIEŃ: ${days[0].label.toUpperCase()} - ${days[6].label.toUpperCase()}`;
     head.innerHTML = `<tr><th class="res-name">ZESPÓŁ</th>${days.map(d => `<th>${d.label.toUpperCase()}</th>`).join('')}</tr>`;
     
@@ -284,7 +214,6 @@ function renderWeek(tbody, head) {
             const td = document.createElement('td'); 
             td.style.padding = '5px'; td.style.verticalAlign = 'top';
             td.onclick = () => { referenceDate = new Date(d.key); setView('day'); };
-
             for(let h=1; h<=7; h++) {
                 const v = cloudData[`traffic-${d.key}-${res}-${h}`] || "";
                 if(v) {
@@ -292,7 +221,7 @@ function renderWeek(tbody, head) {
                     let c = "";
                     Object.keys(tags).forEach(k => { if(v.includes(`[${tags[k].label}]`)) c = tags[k].cls; });
                     pill.className = `task-pill ${c}`;
-                    pill.textContent = v; // XSS Safe
+                    pill.textContent = v;
                     td.appendChild(pill);
                 }
             }
@@ -302,21 +231,12 @@ function renderWeek(tbody, head) {
     });
 }
 
-function render() {
-    const tbody = document.getElementById('table-body');
-    const head = document.getElementById('table-head');
-    tbody.innerHTML = '';
-    const dKey = referenceDate.toISOString().split('T')[0];
-    if (currentView === 'day') renderDay(tbody, head, dKey);
-    else renderWeek(tbody, head);
-}
-
 function setView(v) { 
     currentView = v; 
     document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.id === `btn-${v}`));
     render(); 
 }
-    
+
 function changePeriod(o) {
     if (o === 0) referenceDate = new Date();
     else referenceDate.setDate(referenceDate.getDate() + (currentView === 'day' ? o : o * 7));
@@ -341,9 +261,7 @@ function initLegend() {
 }
 
 // START
-initLegend();
-fetchCloud();
-setInterval(fetchCloud, 60000);
+inicjalizujAplikacje();
 </script>
 </body>
 </html>
