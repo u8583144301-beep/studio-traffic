@@ -87,17 +87,15 @@ const tags = {
 /** 2. AUTH **/
 async function verifyPass(input) {
     if (!input) return false;
-    // Czyścimy wpis ze spacji i zamieniamy na małe litery
     const cleanInput = input.trim().toLowerCase();
     const msgBuffer = new TextEncoder().encode(cleanInput);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
     const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex === "7a4034870f20d57591e1f81d1e44f8496152a658231268685e8d893077e69f3e";
+    return hashHex === HASH_TARGET;
 }
 
 async function checkAccess() {
-    // Sprawdzamy oba możliwe klucze sesji dla pewności
-    if (isReadOnly || sessionStorage.getItem("logged") === "true" || sessionStorage.getItem("app_logged") === "true") {
+    if (isReadOnly || sessionStorage.getItem("logged") === "true") {
         run();
         return;
     }
@@ -111,22 +109,7 @@ async function checkAccess() {
         sessionStorage.setItem("logged", "true");
         run();
     } else {
-        alert("Błąd! Hasło '" + userEntry + "' jest niepoprawne.");
-        location.reload();
-    }
-}
-    if (isReadOnly || sessionStorage.getItem("logged") === "true") {
-        run();
-        return;
-    }
-    const pass = prompt("Podaj hasło:");
-    if (!pass) return;
-    const h = await hash(pass);
-    if (h === HASH_TARGET) {
-        sessionStorage.setItem("logged", "true");
-        run();
-    } else {
-        alert("Błędne hasło!");
+        alert("Błąd! Hasło jest niepoprawne.");
         location.reload();
     }
 }
