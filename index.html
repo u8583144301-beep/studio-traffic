@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STUDIO TRAFIK - Kalendarz</title>
+    <style>
+        :root {
+            --bg: #121212; --card: #1e1e1e; --accent: #3498db; --danger: #e74c3c;
+            --obrobka: #27ae60; --druk: #7f8c8d; --pir: #f1c40f; --detektyw: #2c3e50;
+            --branding: #1e3799; --dtp: #e67e22; --tapeta: #bdc3c7; --ai: #800000;
+            --urlop: #8e44ad; --l4: #c0392b; --spotkanie: #16a085; --foto: #2980b9;
+        }
+        body { margin: 0; background: var(--bg); color: #e0e0e0; font-family: 'Segoe UI', sans-serif; font-size: 11px; }
+        #app-container { max-width: 98vw; margin: 0 auto; padding: 15px; }
+        .tag-legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; background: #1a1a1a; padding: 12px; border-radius: 8px; border: 1px solid #333; }
+        .tag-item { padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+        .tag-item.active { border-color: white; transform: scale(1.05); }
+        
+        .t-o { background: var(--obrobka) !important; } .t-d { background: var(--druk) !important; }
+        .t-pir { background: var(--pir) !important; color: black; } .t-u { background: var(--urlop) !important; }
+        .t-det { background: var(--detektyw) !important; } .t-b { background: var(--branding) !important; }
+        .t-dtp { background: var(--dtp) !important; } .t-t { background: var(--tapeta) !important; color: black; }
+        .t-ai { background: var(--ai) !important; } .t-l4 { background: var(--l4) !important; }
+        .t-s { background: var(--spotkanie) !important; } .t-w { background: var(--foto) !important; }
+        .t-urgent { background: var(--danger) !important; }
+
+        .toolbar { display: flex; gap: 15px; background: var(--card); padding: 15px; border-radius: 8px; margin-bottom: 10px; align-items: center; border-bottom: 3px solid var(--accent); flex-wrap: wrap; }
+        .date-main { font-size: 18px; font-weight: bold; color: var(--accent); min-width: 250px; text-align: center; }
+        table { width: 100%; border-collapse: collapse; background: var(--card); table-layout: fixed; }
+        th, td { border: 1px solid #333; position: relative; }
+        th { background: #252525; padding: 10px; color: #888; font-size: 10px; }
+        .res-name { width: 110px; padding: 12px; font-weight: bold; background: #252525; border-right: 2px solid var(--accent); position: sticky; left: 0; z-index: 10; font-size: 12px; }
+        .slot-box { height: 70px; }
+        .slot-input { width: 100%; height: 100%; background: transparent; border: none; color: white; padding: 18px 5px 5px; resize: none; outline: none; font-size: 11px; position: relative; z-index: 2; font-family: inherit; box-sizing: border-box; }
+        .slot-idx { position: absolute; top: 3px; left: 5px; font-size: 10px; font-weight: bold; opacity: 0.6; color: var(--accent); }
+        .status-bar { font-size: 10px; color: #666; margin-left: auto; }
+        button { background: #333; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #444; }
+        .view-btn.active { background: var(--accent); }
+        .task-pill { padding: 3px; border-radius: 3px; margin-bottom: 2px; font-size: 9px; font-weight: bold; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: white; }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <div class="tag-legend" id="legend"></div>
+        <div class="toolbar">
+            <div class="view-switcher">
+                <button class="view-btn" id="btn-week" onclick="setView('week')">TYDZIEŃ</button>
+                <button class="view-btn active" id="btn-day" onclick="setView('day')">DZIEŃ</button>
+            </div>
+            <button onclick="changePeriod(-1)">«</button>
+            <button onclick="changePeriod(0)">DZISIAJ</button>
+            <button onclick="changePeriod(1)">»</button>
+            <span id="date-label" class="date-main">Ładowanie...</span>
+            <div id="status" class="status-bar">Łączenie...</div>
+        </div>
+        <table id="main-table"><thead id="table-head"></thead><tbody id="table-body"></tbody></table>
+    </div>
+
+<script>
+/** 1. KONFIGURACJA I HASHING **/
+const HASH_HASLA = "7a4034870f20d57591e1f81d1e44f8496152a658231268685e8d893077e69f3e"; // hash dla: zespol_trafik
+const isReadOnly = window.location.search.includes("view=true");
+
+async function generujHash(text) {
+    const msgBuffer = new TextEncoder().encode(text);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** 2. LOGIKA DOSTĘPU (NAPRAWIONA) **/
+async function inicjalizujAplikacje() {
+    // Jeśli tryb tylko do odczytu - startujemy od razu
+    if (isReadOnly) {
+        startSystem();
+        return;
+    }
+
+    const sesja = sessionStorage.getItem("zalogowany");
+    if (sesja === "true") {
+        startSystem();
+        return;
+    }
+
+    const wpisane = prompt("Podaj hasło dostępu:");
+    
+    if (wpisane === null) {
+        document.body.innerHTML = "<h2 style='color:white;text-align:center;margin-top:50px;'>Wymagane hasło.</h2>";
+        return;
+    }
+
+    const wpisaneHash = await generujHash(wpisane);
+
+    if (wpisaneHash === HASH_HASLA) {
+        sessionStorage.setItem("zalogowany", "true");
+        startSystem(); // Uruchomienie po poprawnym haśle
+    } else {
+        alert("Błędne hasło! Spróbuj ponownie.");
+        location.reload(); // Odśwież, by zapytać jeszcze raz
+    }
+}
+
+// Funkcja zbierająca start wszystkich procesów
+function startSystem() {
+    initLegend();
+    fetchCloud();
+    setInterval(fetchCloud, 60000);
+}
+
+// GŁÓWNY START
+inicjalizujAplikacje();
+
+/** 3. RESZTA KONFIGURACJI **/
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzpgYNw2eHPLJYrpoQlax8c4fw_k14Ber2ciYMcbZjwMok3uJbQJTmSgPeptH3Ya5pv/exec";
+const HASLO = "zespol_trafik";
+const isReadOnly = window.location.search.includes("view=true");
+
+let currentView = 'day'; 
+let referenceDate = new Date();
+let cloudData = {};
+let activeTag = null;
+
+const allResources = ["Boguś O.", "Monika Sz.", "Anna M.", "Michał P.", "Bartek Ś.", "Paweł R.", "Jarek K.", "Grzegorz S.", "Xawery K."];
+const tags = {
+    '#o': { label: 'OBRÓBKA', cls: 't-o', hex: '#27ae60' },
+    '#d': { label: 'DRUK', cls: 't-d', hex: '#7f8c8d' },
+    '#pir': { label: 'PiR', cls: 't-pir', hex: '#f1c40f' },
+    '#det': { label: 'DETEKTYW', cls: 't-det', hex: '#2c3e50' },
+    '#b': { label: 'BRANDING', cls: 't-b', hex: '#1e3799' },
+    '#dtp': { label: 'DTP', cls: 't-dtp', hex: '#e67e22' },
+    '#t': { label: 'TAPETA', cls: 't-t', hex: '#bdc3c7' },
+    '#ai': { label: 'AI', cls: 't-ai', hex: '#800000' },
+    '#u': { label: 'URLOP', cls: 't-u', hex: '#8e44ad' },
+    '#l4': { label: 'L4', cls: 't-l4', hex: '#c0392b' },
+    '#s': { label: 'SPOTKANIE', cls: 't-s', hex: '#16a085' },
+    '#w': { label: 'FOTO', cls: 't-w', hex: '#2980b9' },
+    '!!': { label: 'PILNE', cls: 't-urgent', hex: '#e74c3c' }
+};
+
+/** 2. BEZPIECZNY DOSTĘP (HASHING) **/
+const HASH_HASLA = "7a4034870f20d57591e1f81d1e44f8496152a658231268685e8d893077e69f3e";
+
+// Funkcja zamieniająca tekst na bezpieczny hash
+async function generujHash(text) {
+    const msgBuffer = new TextEncoder().encode(text);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sprawdzDostep() {
+    if (isReadOnly) return; // Widzowie nie potrzebują hasła
+    
+    const sesja = sessionStorage.getItem("zalogowany");
+    if (sesja === "true") return;
+
+    const wpisane = prompt("Podaj hasło dostępu:");
+    
+    if (wpisane === null) {
+        document.body.innerHTML = "<h2 style='color:white;text-align:center;margin-top:50px;'>Dostęp zablokowany.</h2>";
+        throw "Cancelled";
+    }
+
+    // Zamieniamy wpisany tekst na hash i porównujemy z zapisanym
+    const wpisaneHash = await generujHash(wpisane);
+
+    if (wpisaneHash === HASH_HASLA) {
+        sessionStorage.setItem("zalogowany", "true");
+        location.reload(); // Odświeżamy, aby ruszył render danych
+    } else {
+        alert("Błędne hasło!");
+        document.body.innerHTML = "<h2 style='color:white;text-align:center;margin-top:50px;'>Brak autoryzacji.</h2>";
+        throw "Auth failed";
+    }
+}
+
+// Wywołanie musi być asynchroniczne
+sprawdzDostep();
+
+/** 3. LOGIKA BIZNESOWA **/
+async function fetchCloud() {
+    const statusEl = document.getElementById('status');
+    statusEl.innerText = "Pobieranie...";
+    try {
+        const response = await fetch(SCRIPT_URL);
+        cloudData = await response.json();
+        statusEl.innerText = "Zsynchronizowano: " + new Date().toLocaleTimeString();
+    } catch (e) {
+        statusEl.innerText = "Błąd bazy danych!";
+    }
+    render();
+}
+
+function saveData(dKey, sId, val) {
+    if (isReadOnly) return;
+    const id = `traffic-${dKey}-${sId}`;
+    cloudData[id] = val;
+    document.getElementById('status').innerText = "Zapisywanie...";
+    
+    fetch(SCRIPT_URL, { 
+        method: 'POST', 
+        body: JSON.stringify({id: id, val: val}) 
+    }).then(() => {
+        document.getElementById('status').innerText = "Zapisano pomyślnie";
+    }).catch(() => {
+        document.getElementById('status').innerText = "Błąd połączenia przy zapisie!";
+    });
+}
+
+function renderDay(tbody, head, dKey) {
+    document.getElementById('date-label').innerText = referenceDate.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
+    head.innerHTML = `<tr><th class="res-name">ZESPÓŁ</th>${[1,2,3,4,5,6,7].map(h => `<th>${h}H</th>`).join('')}</tr>`;
+    
+    let totalWorkHours = 0;
+    allResources.forEach(res => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="res-name">${res}</td>`;
+        for (let i = 1; i <= 7; i++) {
+            const sId = `${res}-${i}`;
+            const val = cloudData[`traffic-${dKey}-${sId}`] || "";
+            let bg = 'transparent';
+            Object.keys(tags).forEach(k => { if (val.includes(`[${tags[k].label}]`)) bg = tags[k].hex; });
+            if (val.trim() !== "" && !val.includes("[URLOP]") && !val.includes("[L4]")) totalWorkHours++;
+
+            const td = document.createElement('td');
+            td.className = 'slot-box';
+            td.style.backgroundColor = bg;
+            
+            const input = document.createElement('textarea');
+            input.className = 'slot-input';
+            input.value = val;
+            if (isReadOnly) input.readOnly = true;
+
+            input.onfocus = () => {
+                if (!isReadOnly && activeTag) {
+                    const newLabel = `[${tags[activeTag].label}]`;
+                    let currentText = input.value.replace(/\[.*?\]/g, '').trim();
+                    input.value = newLabel + " " + currentText;
+                    td.style.backgroundColor = tags[activeTag].hex;
+                    saveData(dKey, sId, input.value);
+                    setTimeout(render, 100);
+                }
+            };
+
+            input.onblur = () => {
+                if (!isReadOnly) {
+                    saveData(dKey, sId, input.value);
+                    setTimeout(render, 300);
+                }
+            };
+
+            td.innerHTML = `<span class="slot-idx">${i}H</span>`;
+            td.appendChild(input);
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    });
+
+    const footerTr = document.createElement('tr');
+    footerTr.innerHTML = `<td class="res-name" style="color:var(--accent);background:#1a1a1a;">MOC DNIA:</td><td colspan="7" style="padding:10px;font-size:14px;font-weight:bold;background:#1a1a1a;">🚀 Zaplanowano: <span style="color:var(--obrobka);">${totalWorkHours}H</span></td>`;
+    tbody.appendChild(footerTr);
+}
+
+function renderWeek(tbody, head) {
+    const start = new Date(referenceDate);
+    const dayOffset = start.getDay();
+    start.setDate(start.getDate() - dayOffset + (dayOffset === 0 ? -6 : 1));
+    
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(start); 
+        d.setDate(start.getDate() + i);
+        days.push({ key: d.toISOString().split('T')[0], label: d.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric' }) });
+    }
+
+    document.getElementById('date-label').innerText = `TYDZIEŃ: ${days[0].label.toUpperCase()} - ${days[6].label.toUpperCase()}`;
+    head.innerHTML = `<tr><th class="res-name">ZESPÓŁ</th>${days.map(d => `<th>${d.label.toUpperCase()}</th>`).join('')}</tr>`;
+    
+    allResources.forEach(res => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="res-name">${res}</td>`;
+        days.forEach(d => {
+            const td = document.createElement('td'); 
+            td.style.padding = '5px'; td.style.verticalAlign = 'top';
+            td.onclick = () => { referenceDate = new Date(d.key); setView('day'); };
+
+            for(let h=1; h<=7; h++) {
+                const v = cloudData[`traffic-${d.key}-${res}-${h}`] || "";
+                if(v) {
+                    const pill = document.createElement('div');
+                    let c = "";
+                    Object.keys(tags).forEach(k => { if(v.includes(`[${tags[k].label}]`)) c = tags[k].cls; });
+                    pill.className = `task-pill ${c}`;
+                    pill.textContent = v; // XSS Safe
+                    td.appendChild(pill);
+                }
+            }
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+}
+
+function render() {
+    const tbody = document.getElementById('table-body');
+    const head = document.getElementById('table-head');
+    tbody.innerHTML = '';
+    const dKey = referenceDate.toISOString().split('T')[0];
+    if (currentView === 'day') renderDay(tbody, head, dKey);
+    else renderWeek(tbody, head);
+}
+
+function setView(v) { 
+    currentView = v; 
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.id === `btn-${v}`));
+    render(); 
+}
+    
+function changePeriod(o) {
+    if (o === 0) referenceDate = new Date();
+    else referenceDate.setDate(referenceDate.getDate() + (currentView === 'day' ? o : o * 7));
+    fetchCloud(); 
+}
+
+function initLegend() {
+    const leg = document.getElementById('legend');
+    if (isReadOnly) { leg.style.display = 'none'; return; }
+    leg.innerHTML = '';
+    Object.keys(tags).forEach(k => {
+        const div = document.createElement('div');
+        div.className = `tag-item ${tags[k].cls}`;
+        div.innerText = tags[k].label;
+        div.onclick = () => {
+            document.querySelectorAll('.tag-item').forEach(el => el.classList.remove('active'));
+            if (activeTag === k) activeTag = null;
+            else { activeTag = k; div.classList.add('active'); }
+        };
+        leg.appendChild(div);
+    });
+}
+
+// START
+initLegend();
+fetchCloud();
+setInterval(fetchCloud, 60000);
+</script>
+</body>
+</html>
