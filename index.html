@@ -215,7 +215,7 @@ function setView(v) {
 function changePeriod(o) {
     if (o === 0) referenceDate = new Date();
     else referenceDate.setDate(referenceDate.getDate() + (currentView === 'day' ? o : o * 7));
-    fetchData();
+    render();
 }
 function initLegend() {
     const leg = document.getElementById('legend');
