@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
     <title>STUDIO TRAFIK - Kalendarz</title>
     <style>
         :root {
@@ -11,10 +12,10 @@
             --branding: #1e3799; --dtp: #e67e22; --tapeta: #bdc3c7; --ai: #800000;
             --urlop: #8e44ad; --l4: #c0392b; --spotkanie: #16a085; --foto: #2980b9;
         }
-        body { margin: 0; background: var(--bg); color: #e0e0e0; font-family: 'Segoe UI', sans-serif; font-size: 11px; }
+        body { margin: 0; background: var(--bg); color: #e0e0e0; font-family: 'Segoe UI', sans-serif; font-size: 11px; overflow-x: hidden; }
         #app-container { max-width: 98vw; margin: 0 auto; padding: 15px; }
         .tag-legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; background: #1a1a1a; padding: 12px; border-radius: 8px; border: 1px solid #333; }
-        .tag-item { padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+        .tag-item { padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; border: 2px solid transparent; transition: 0.2s; user-select: none; }
         .tag-item.active { border-color: white; transform: scale(1.05); }
         .t-o { background: var(--obrobka) !important; } .t-d { background: var(--druk) !important; }
         .t-pir { background: var(--pir) !important; color: black; } .t-u { background: var(--urlop) !important; }
@@ -50,14 +51,13 @@
             <button onclick="changePeriod(-1)">«</button>
             <button onclick="changePeriod(0)">DZISIAJ</button>
             <button onclick="changePeriod(1)">»</button>
-            <span id="date-label" class="date-main">CZEKAM...</span>
+            <span id="date-label" class="date-main">LOGOWANIE...</span>
             <div id="status" class="status-bar">Status: OK</div>
         </div>
         <table id="main-table"><thead id="table-head"></thead><tbody id="table-body"></tbody></table>
     </div>
 
 <script>
-/** 1. CONFIG **/
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzpgYNw2eHPLJYrpoQlax8c4fw_k14Ber2ciYMcbZjwMok3uJbQJTmSgPeptH3Ya5pv/exec";
 const HASH_TARGET = "7a4034870f20d57591e1f81d1e44f8496152a658231268685e8d893077e69f3e";
 const isReadOnly = window.location.search.includes("view=true");
@@ -84,37 +84,29 @@ const tags = {
     '!!': { label: 'PILNE', cls: 't-urgent', hex: '#e74c3c' }
 };
 
-/** 2. AUTH **/
 async function verifyPass(input) {
     if (!input) return false;
     const cleanInput = input.trim().toLowerCase();
     const msgBuffer = new TextEncoder().encode(cleanInput);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex === HASH_TARGET;
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('') === HASH_TARGET;
 }
 
 async function checkAccess() {
     if (isReadOnly || sessionStorage.getItem("logged") === "true") {
-        run();
-        return;
+        run(); return;
     }
-
-    const userEntry = prompt("Podaj hasło zespołu:");
+    const userEntry = prompt("Podaj hasło:");
     if (!userEntry) return;
-
-    const isOk = await verifyPass(userEntry);
-
-    if (isOk) {
+    if (await verifyPass(userEntry)) {
         sessionStorage.setItem("logged", "true");
         run();
     } else {
-        alert("Błąd! Hasło jest niepoprawne.");
+        alert("Błędne hasło!");
         location.reload();
     }
 }
 
-/** 3. CORE **/
 function run() {
     initLegend();
     fetchData();
@@ -122,15 +114,14 @@ function run() {
 }
 
 async function fetchData() {
-    const st = document.getElementById('status');
-    if(st) st.innerText = "Synchronizacja...";
+    document.getElementById('status').innerText = "Synchronizacja...";
     try {
         const r = await fetch(SCRIPT_URL);
         cloudData = await r.json();
-        if(st) st.innerText = "Aktualny: " + new Date().toLocaleTimeString();
+        document.getElementById('status').innerText = "OK: " + new Date().toLocaleTimeString();
         render();
     } catch (e) {
-        if(st) st.innerText = "Błąd bazy!";
+        document.getElementById('status').innerText = "Błąd bazy!";
     }
 }
 
@@ -141,7 +132,6 @@ function saveData(dKey, sId, val) {
     fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({id, val}) });
 }
 
-/** 4. RENDER **/
 function render() {
     const tbody = document.getElementById('table-body');
     const head = document.getElementById('table-head');
@@ -152,7 +142,6 @@ function render() {
     if (currentView === 'day') {
         document.getElementById('date-label').innerText = referenceDate.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
         head.innerHTML = `<tr><th class="res-name">ZESPÓŁ</th>${[1,2,3,4,5,6,7].map(h => `<th>${h}H</th>`).join('')}</tr>`;
-        let p = 0;
         allResources.forEach(res => {
             const tr = document.createElement('tr');
             tr.innerHTML = `<td class="res-name">${res}</td>`;
@@ -161,7 +150,6 @@ function render() {
                 const val = cloudData[`traffic-${dKey}-${sId}`] || "";
                 let bg = 'transparent';
                 Object.keys(tags).forEach(k => { if (val.includes(`[${tags[k].label}]`)) bg = tags[k].hex; });
-                if (val.trim() && !val.includes("[URLOP]") && !val.includes("[L4]")) p++;
                 const td = document.createElement('td');
                 td.className = 'slot-box'; td.style.backgroundColor = bg;
                 const input = document.createElement('textarea');
@@ -182,7 +170,7 @@ function render() {
         });
     } else {
         const start = new Date(referenceDate);
-        start.setDate(start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1));
+        start.setDate(start.getDate() - (start.getDay() === 0 ? 6 : start.getDay() - 1));
         const days = [];
         for (let i = 0; i < 7; i++) {
             const d = new Date(start); d.setDate(start.getDate() + i);
@@ -213,20 +201,15 @@ function render() {
     }
 }
 
-function setView(v) { 
-    currentView = v; 
-    document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.id === `btn-${v}`));
-    render(); 
-}
+function setView(v) { currentView = v; render(); }
 function changePeriod(o) {
     if (o === 0) referenceDate = new Date();
     else referenceDate.setDate(referenceDate.getDate() + (currentView === 'day' ? o : o * 7));
-    render();
+    render(); // Szybkie przewijanie
 }
 function initLegend() {
     const leg = document.getElementById('legend');
-    if (!leg) return;
-    if (isReadOnly) { leg.style.display = 'none'; return; }
+    if (!leg || isReadOnly) return;
     leg.innerHTML = '';
     Object.keys(tags).forEach(k => {
         const div = document.createElement('div');
